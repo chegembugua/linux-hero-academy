@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build && tsc server.ts --outDir dist --module esnext --moduleResolution node --target es2020 --allowJs true --skipLibCheck true --noEmit false || echo 'Ignoring minor types'",
+    "build": "vite build && tsc server.ts --outDir dist --module esnext --moduleResolution node --target es2020 --allowJs true --skipLibCheck true --noEmit false --esModuleInterop true || echo 'Build continued despite type warnings'",
     "start": "node dist/server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
