@@ -10,16 +10,14 @@ import { GoogleGenAI } from "@google/genai";
 // Initialization
 const app = express();
 
-// --- RAILWAY & PRODUCTION UPGRADES ---
-// 1. Dynamic Port: Railway assigns a port via process.env.PORT
+// --- PRODUCTION UPGRADES ---
+// Render assigns a port via process.env.PORT
 const PORT = process.env.PORT || 3000;
 
-// 2. Persistent Database Path:
-// In production/Railway, we store the DB in /app/data (the Volume mount)
-// Locally, it stays in the root folder.
+// Render uses /opt/render/project/src for the current working directory
 const isProd = process.env.NODE_ENV === "production";
 const dbPath = isProd 
-  ? "/app/data/linux_hero.db" 
+  ? "linux_hero.db" // On Render, standard persistent disks are usually mapped to the root
   : "linux_hero.db";
 
 const db = new Database(dbPath);
@@ -43,7 +41,7 @@ app.use(cors());
 app.use(express.json());
 
 // API Routes
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", (req: any, res: any) => {
   try {
     const { username, password } = req.body;
     const hashedPassword = bcrypt.hashSync(password, 10);
@@ -59,7 +57,7 @@ app.post("/api/auth/register", (req, res) => {
   }
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", (req: any, res: any) => {
   const { username, password } = req.body;
   const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
   
@@ -82,7 +80,7 @@ app.post("/api/auth/login", (req, res) => {
 });
 
 // AI Mentor Proxy
-app.post("/api/mentor", async (req, res) => {
+app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
   
@@ -94,8 +92,9 @@ app.post("/api/mentor", async (req, res) => {
   }
 
   try {
-    const ai = new GoogleGenAI(apiKey);
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // FIX: Updated to correct GoogleGenAI initialization
+    const genAI = new GoogleGenAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const prompt = `
       You are a professional Linux Mentor. A student is learning Linux terminal.
@@ -109,17 +108,19 @@ app.post("/api/mentor", async (req, res) => {
     `;
 
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    // Simple regex to extract JSON if Gemini wraps it in markdown
+    const response = await result.response;
+    const text = response.text();
+    
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const cleanedJson = jsonMatch ? jsonMatch[0] : text;
     res.json(JSON.parse(cleanedJson));
   } catch (err) {
+    console.error("AI Error:", err);
     res.status(500).json({ error: "AI Service Unavailable" });
   }
 });
 
-// Vite Middleware for Dev, Static for Prod
+// Setup static serving
 async function setupServer() {
   if (!isProd) {
     const vite = await createViteServer({
@@ -135,10 +136,8 @@ async function setupServer() {
     });
   }
 
-  // Listen on 0.0.0.0 is mandatory for cloud providers like Railway
   app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`🚀 Linux Hero is live on port ${PORT}`);
-    console.log(`📂 DB Location: ${dbPath}`);
   });
 }
 
