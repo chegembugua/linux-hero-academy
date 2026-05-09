@@ -4,12 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build && tsc server.ts --outDir dist --module esnext --moduleResolution node --target es2020 --allowJs true --skipLibCheck true --noEmit false --esModuleInterop true",
-    "start": "node dist/server.js",
-    "preview": "vite preview",
-    "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "dev": "vite",
+    "build": "vite build && tsc server.ts --outDir dist --module esnext --moduleResolution node --target es2020 --allowSyntheticDefaultImports true --skipLibCheck true --esModuleInterop true",
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -38,8 +35,6 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "autoprefixer": "^10.4.21",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2"
   }
 }
