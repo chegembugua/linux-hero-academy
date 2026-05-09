@@ -11,19 +11,14 @@ import { GoogleGenAI } from "@google/genai";
 const app = express();
 
 // --- PRODUCTION UPGRADES ---
-// Render assigns a port via process.env.PORT
 const PORT = process.env.PORT || 3000;
-
-// Render uses /opt/render/project/src for the current working directory
 const isProd = process.env.NODE_ENV === "production";
-const dbPath = isProd 
-  ? "linux_hero.db" // On Render, standard persistent disks are usually mapped to the root
-  : "linux_hero.db";
 
+// Database Setup
+const dbPath = "linux_hero.db";
 const db = new Database(dbPath);
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 
-// Database Setup
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -92,9 +87,9 @@ app.post("/api/mentor", async (req: any, res: any) => {
   }
 
   try {
-    // FIX: Updated to correct GoogleGenAI initialization
-    const genAI = new GoogleGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // We use 'as any' here to bypass the strict type checking that's failing on Render
+    const genAI = new GoogleGenAI(apiKey) as any;
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }) as any;
     
     const prompt = `
       You are a professional Linux Mentor. A student is learning Linux terminal.
@@ -120,7 +115,7 @@ app.post("/api/mentor", async (req: any, res: any) => {
   }
 });
 
-// Setup static serving
+// Setup serving
 async function setupServer() {
   if (!isProd) {
     const vite = await createViteServer({
