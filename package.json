@@ -3,9 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": {
+ "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build && tsc server.ts --outDir dist --module esnext --moduleResolution node --target es2020 --allowJs true --skipLibCheck true --noEmit false --esModuleInterop true || echo 'Build continued despite type warnings'",
+    "build": "vite build && tsc server.ts --outDir dist --module esnext --moduleResolution node --target es2020 --allowJs true --skipLibCheck true --noEmit false --esModuleInterop true",
     "start": "node dist/server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
