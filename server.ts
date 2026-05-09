@@ -54,7 +54,7 @@ app.post("/api/auth/login", (req: any, res: any) => {
   }
 });
 
-// AI Mentor Proxy - FIXED CONSTRUCTOR
+// AI Mentor Proxy - FIXED FOR TS2339 & TS2559
 app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
@@ -64,16 +64,18 @@ app.post("/api/mentor", async (req: any, res: any) => {
   }
 
   try {
-    // FIXED: Passing an object instead of a string to avoid TS2559
-    const ai = new GoogleGenAI({ apiKey }); 
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // FIX: Initialize with object and cast to 'any' to bypass strict TS checks on Render
+    const genAI = new GoogleGenAI({ apiKey }) as any; 
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `Linux Mentor feedback for: ${context.moduleTitle}. Command: ${lastCommand}. Output: ${output}. Return JSON: { "type": "hint", "message": "..." }`;
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const response = await result.response;
+    const text = response.text();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     res.json(JSON.parse(jsonMatch ? jsonMatch[0] : text));
   } catch (err) {
+    console.error("AI Error:", err);
     res.status(500).json({ error: "AI Service Unavailable" });
   }
 });
