@@ -66,9 +66,11 @@ export interface Module {
 }
 
 export interface UserProgress {
+  userId: string | null;      // NEW: Tracks which user is practicing
   xp: number;
   level: number;
   streak: number;
+  dailyMinutes: number;      // NEW: Stores the 1-hour practice progress
   lastVisit: string;
   completedModules: string[];
   unlockedModules: string[];

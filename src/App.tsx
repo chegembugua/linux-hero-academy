@@ -15,7 +15,31 @@ import InfrastructureScenarios from './components/InfrastructureScenarios';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'terminal' | 'roadmap' | 'profile'>('home');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const { progress, completeModule } = useProgress();
+  const { progress, completeModule, updateDailyMinutes } = useProgress(); 
+
+  // This "Heartbeat" sends an update to your server every 60 seconds
+  React.useEffect(() => {
+    if (!progress.userId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/user/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: progress.userId })
+        });
+        const data = await response.json();
+        
+        if (data.dailyMinutes && typeof updateDailyMinutes === 'function') {
+          updateDailyMinutes(data.dailyMinutes);
+        }
+      } catch (e) {
+        console.error("Heartbeat failed", e);
+      }
+    }, 60000); 
+
+    return () => clearInterval(interval);
+  }, [progress.userId, updateDailyMinutes]);
 
   const selectedModule = MODULES.find(m => m.id === selectedModuleId);
 
