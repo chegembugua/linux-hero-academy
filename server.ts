@@ -15,9 +15,10 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 // Database Setup - EXPANDED FOR ENTERPRISE ARCHITECTURE
 const db = new Database("linux_hero.db");
 db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
+ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
-    username TEXT UNIQUE,
+    email TEXT UNIQUE,
+    first_name TEXT,
     password TEXT,
     xp INTEGER DEFAULT 0,
     level INTEGER DEFAULT 1,
@@ -49,6 +50,21 @@ db.exec(`
 app.use(cors());
 app.use(express.json());
 
+// --- Authentication Middleware ---
+// This protects your new routes so only logged-in users can access them
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer <token>"
+  
+  if (token == null) return res.sendStatus(401);
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
+
 // Heartbeat endpoint to track practice time
 app.post("/api/user/heartbeat", (req: any, res: any) => {
   const { userId } = req.body;
@@ -65,39 +81,95 @@ app.post("/api/user/heartbeat", (req: any, res: any) => {
   }
 });
 
-// Auth Routes
+// --- Auth Routes (UPDATED FOR EMAIL & FIRST NAME) ---
 app.post("/api/auth/register", (req: any, res: any) => {
   try {
-    const { username, password } = req.body;
+    const { email, firstName, password } = req.body; 
     const hashedPassword = bcrypt.hashSync(password, 10);
     const id = Math.random().toString(36).substr(2, 9);
-    db.prepare("INSERT INTO users (id, username, password) VALUES (?, ?, ?)").run(id, username, hashedPassword);
-    const token = jwt.sign({ id, username }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user: { id, username, xp: 0, level: 1, dailyMinutes: 0 } });
+    
+    db.prepare("INSERT INTO users (id, email, first_name, password) VALUES (?, ?, ?, ?)").run(id, email, firstName, hashedPassword);
+    
+    const token = jwt.sign({ id, email, firstName }, JWT_SECRET, { expiresIn: "7d" });
+    res.json({ token, user: { id, email, firstName, xp: 0, level: 1, dailyMinutes: 0 } });
   } catch (err) {
-    res.status(400).json({ error: "Username already taken" });
+    res.status(400).json({ error: "Email already registered" });
   }
 });
 
 app.post("/api/auth/login", (req: any, res: any) => {
-  const { username, password } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+  const { email, password } = req.body;
+  const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
+  
   if (user && bcrypt.compareSync(password, user.password)) {
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ id: user.id, email: user.email, firstName: user.first_name }, JWT_SECRET, { expiresIn: "7d" });
     res.json({ 
         token, 
         user: { 
-            ...user, 
+            id: user.id,
+            email: user.email,
+            firstName: user.first_name,
+            xp: user.xp,
+            level: user.level,
+            streak: user.streak,
             completedModules: JSON.parse(user.completed_modules),
             dailyMinutes: user.daily_minutes 
         } 
     });
   } else {
-    res.status(401).json({ error: "Invalid credentials" });
+    res.status(401).json({ error: "Invalid email or password" });
   }
 });
 
-// AI Mentor Proxy - UPGRADED TO SENIOR ENGINEER LOGIC
+// --- Progress Routes (NEW) ---
+
+// Route to fetch progress on page load
+app.get("/api/user/progress", authenticateToken, (req: any, res: any) => {
+    try {
+        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id) as any;
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        res.json({
+            userId: user.id,
+            email: user.email,
+            firstName: user.first_name,
+            xp: user.xp,
+            level: user.level,
+            streak: user.streak,
+            dailyMinutes: user.daily_minutes,
+            completedModules: JSON.parse(user.completed_modules)
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Database error" });
+    }
+});
+
+// Route to save module completion permanently
+app.post("/api/user/complete-module", authenticateToken, (req: any, res: any) => {
+    const { moduleId, xpBonus } = req.body;
+    try {
+        const user = db.prepare("SELECT completed_modules, xp FROM users WHERE id = ?").get(req.user.id) as any;
+        let completed = JSON.parse(user.completed_modules);
+        
+        if (!completed.includes(moduleId)) {
+            completed.push(moduleId);
+            const newXp = user.xp + xpBonus;
+            const newLevel = Math.floor(newXp / 500) + 1;
+
+            const stmt = db.prepare(`
+                UPDATE users 
+                SET completed_modules = ?, xp = ?, level = ? 
+                WHERE id = ?
+            `);
+            stmt.run(JSON.stringify(completed), newXp, newLevel, req.user.id);
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Database error" });
+    }
+});
+
+// --- AI Mentor Proxy ---
 app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
@@ -107,7 +179,6 @@ app.post("/api/mentor", async (req: any, res: any) => {
     const genAI = new GoogleGenAI({ apiKey }) as any; 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    // NEW: Highly structured prompt for better AI feedback
     const prompt = `
       You are a senior Linux engineer mentoring a junior student.
       Context: ${context.moduleTitle}

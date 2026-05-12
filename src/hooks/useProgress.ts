@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+// src/hooks/useProgress.ts
+import { useState, useEffect, useCallback } from 'react';
 import { UserProgress } from '../types';
 
-const STORAGE_KEY = 'linux_hero_progress';
-
-// Added userId and dailyMinutes to the initial state
 const INITIAL_PROGRESS: UserProgress = {
-  userId: null, // This will be set during login
+  userId: null,
   xp: 0,
   level: 1,
   streak: 0,
-  dailyMinutes: 0, // Track practice time
+  dailyMinutes: 0,
   lastVisit: new Date().toISOString(),
   completedModules: [],
   unlockedModules: ['m1'],
@@ -17,68 +15,112 @@ const INITIAL_PROGRESS: UserProgress = {
 };
 
 export function useProgress() {
-  const [progress, setProgress] = useState<UserProgress>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      // Ensure the UI doesn't crash if these new fields are missing from old storage
-      return { 
-        ...INITIAL_PROGRESS, 
-        ...parsed,
-        dailyMinutes: parsed.dailyMinutes || 0 
-      };
-    }
-    return INITIAL_PROGRESS;
-  });
+  const [progress, setProgress] = useState<UserProgress>(INITIAL_PROGRESS);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Load progress from the server when the hook mounts
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
-  }, [progress]);
+    const fetchProgress = async () => {
+      try {
+        // Fetch the JWT token that is saved during login
+        const token = localStorage.getItem('token'); 
+        if (!token) {
+           setIsLoading(false);
+           return;
+        }
 
-  // NEW: Function to update minutes from the Heartbeat
-  const updateDailyMinutes = (minutes: number) => {
+        const response = await fetch('/api/user/progress', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setProgress(prev => ({
+            ...prev,
+            ...data,
+            // Calculate unlocked modules dynamically based on what the server says is completed
+            unlockedModules: calculateUnlockedModules(data.completedModules)
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to load progress:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProgress();
+  }, []);
+
+  // Helper function to figure out what's unlocked based on what's completed
+  const calculateUnlockedModules = (completed: string[]) => {
+    const unlocked = ['m1'];
+    completed.forEach(moduleId => {
+      const nextIndex = parseInt(moduleId.replace('m', '')) + 1;
+      const nextId = `m${nextIndex}`;
+      if (!unlocked.includes(nextId)) {
+        unlocked.push(nextId);
+      }
+    });
+    return unlocked;
+  };
+
+  // Heartbeat function (used by App.tsx)
+  const updateDailyMinutes = useCallback((minutes: number) => {
     setProgress(prev => ({
       ...prev,
       dailyMinutes: minutes
     }));
-  };
+  }, []);
 
-  // UPDATED: Ensure login/registration sets the userId
-  const setUserId = (id: string) => {
-    setProgress(prev => ({ ...prev, userId: id }));
-  };
+  // Sync completed modules to the server
+  const completeModule = async (moduleId: string, xpBonus: number) => {
+    if (progress.completedModules.includes(moduleId) || !progress.userId) return;
 
-  const addXp = (amount: number) => {
-    setProgress(prev => {
-      const newXp = prev.xp + amount;
-      const newLevel = Math.floor(newXp / 500) + 1;
-      return { ...prev, xp: newXp, level: newLevel };
-    });
-  };
-
-  const completeModule = (moduleId: string, xpBonus: number) => {
-    if (progress.completedModules.includes(moduleId)) return;
-    
+    // Optimistic UI update (update frontend immediately so the user doesn't feel a delay)
     setProgress(prev => {
       const newCompleted = [...prev.completedModules, moduleId];
-      const nextIndex = parseInt(moduleId.replace('m', '')) + 1;
-      const nextId = `m${nextIndex}`;
-      const newUnlocked = [...prev.unlockedModules];
-      if (!newUnlocked.includes(nextId)) {
-        newUnlocked.push(nextId);
-      }
       return {
         ...prev,
         completedModules: newCompleted,
-        unlockedModules: newUnlocked,
+        unlockedModules: calculateUnlockedModules(newCompleted),
         xp: prev.xp + xpBonus,
         level: Math.floor((prev.xp + xpBonus) / 500) + 1
       };
     });
+
+    // Send the actual update to the server securely
+    try {
+      await fetch('/api/user/complete-module', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ moduleId, xpBonus })
+      });
+    } catch (error) {
+      console.error("Failed to sync completed module:", error);
+    }
+  };
+
+  const addXp = (amount: number) => {
+      setProgress(prev => {
+        const newXp = prev.xp + amount;
+        const newLevel = Math.floor(newXp / 500) + 1;
+        return { ...prev, xp: newXp, level: newLevel };
+      });
+  };
+
+  const setUserId = (id: string) => {
+    setProgress(prev => ({ ...prev, userId: id }));
   };
 
   return { 
     progress, 
+    isLoading, 
     addXp, 
     completeModule, 
     updateDailyMinutes, 

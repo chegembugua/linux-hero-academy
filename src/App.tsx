@@ -1,21 +1,25 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Terminal as TerminalIcon, Home, User, BookOpen, Star, Trophy, Flame, Lock } from 'lucide-react';
+
 import { useProgress } from './hooks/useProgress';
 import { useTerminal } from './hooks/useTerminal';
 import { MODULES } from './data/modules';
+
 import ModuleCard from './components/ModuleCard';
 import ModuleDetail from './components/ModuleDetail';
 import TerminalSimulator from './components/TerminalSimulator';
 import FileVisualizer from './components/FileVisualizer';
-
 import DailyRoutine from './components/DailyRoutine';
 import InfrastructureScenarios from './components/InfrastructureScenarios';
+import AuthScreen from './components/AuthScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'terminal' | 'roadmap' | 'profile'>('home');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const { progress, completeModule, updateDailyMinutes } = useProgress(); 
+  
+  // ---> IMPORTANT: Notice isLoading is here! <---
+  const { progress, isLoading, completeModule, updateDailyMinutes } = useProgress(); 
 
   // This "Heartbeat" sends an update to your server every 60 seconds
   React.useEffect(() => {
@@ -43,9 +47,24 @@ export default function App() {
 
   const selectedModule = MODULES.find(m => m.id === selectedModuleId);
 
+  // --- THE GATEKEEPER LOGIC ---
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#000] flex items-center justify-center text-green-500 font-mono text-sm font-bold">
+        <TerminalIcon className="animate-pulse mr-3" size={20} /> Booting Linux Environment...
+      </div>
+    );
+  }
+
+  if (!progress.userId) {
+    // If no user is found, show the Auth Screen. 
+    // On success, we reload the page to cleanly fetch their database profile!
+    return <AuthScreen onSuccess={() => window.location.reload()} />;
+  }
+
+  // --- YOUR EXISTING RETURN STATEMENT STARTS HERE ---
   return (
     <div className="min-h-screen bg-[#000] text-white flex flex-col lg:flex-row relative overflow-hidden font-sans">
-      
       {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden opacity-20">
          <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-green-500/10 blur-[120px] rounded-full" />
