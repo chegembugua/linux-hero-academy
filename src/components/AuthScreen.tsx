@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Terminal as TerminalIcon, Lock, Mail, User, ArrowRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Terminal as TerminalIcon, Lock, Mail, User, ArrowRight, Eye, EyeOff, Check, X } from 'lucide-react';
 
 interface AuthScreenProps {
   onSuccess: () => void;
@@ -11,12 +11,29 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Live Password Validation Checks
+  const passwordReqs = {
+    length: password.length >= 8,
+    upper: /[A-Z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[^A-Za-z0-9]/.test(password),
+  };
+  const isPasswordValid = Object.values(passwordReqs).every(Boolean);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Prevent registration if password is weak
+    if (!isLogin && !isPasswordValid) {
+      setError('Please ensure your password meets all security requirements.');
+      return;
+    }
+
     setIsLoading(true);
 
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
@@ -47,6 +64,14 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
     }
   };
 
+  // Helper component for the checklist
+  const Requirement = ({ met, text }: { met: boolean, text: string }) => (
+    <div className={`flex items-center gap-2 text-xs font-bold ${met ? 'text-green-500' : 'text-gray-500'}`}>
+      {met ? <Check size={14} /> : <X size={14} />}
+      <span>{text}</span>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#000] flex items-center justify-center relative overflow-hidden font-sans">
       {/* Background Decor */}
@@ -64,10 +89,25 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
           <div className="w-16 h-16 rounded-2xl bg-green-500/10 border border-green-500/30 flex items-center justify-center mb-4">
             <TerminalIcon className="text-green-500" size={32} />
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            {isLogin ? 'Initiate Session' : 'Create Access Token'}
-          </h2>
-          <p className="text-gray-500 text-sm mt-2">Linux Hero Academy</p>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Linux Hero Academy</h2>
+        </div>
+
+        {/* Clear Tab System for Login vs Register */}
+        <div className="flex p-1 bg-black/50 border border-gray-800 rounded-xl mb-8">
+          <button 
+            type="button"
+            onClick={() => { setIsLogin(true); setError(''); }}
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLogin ? 'bg-gray-800 text-white shadow-md' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            Login
+          </button>
+          <button 
+            type="button"
+            onClick={() => { setIsLogin(false); setError(''); }}
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLogin ? 'bg-gray-800 text-white shadow-md' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            Register
+          </button>
         </div>
 
         {error && (
@@ -77,19 +117,26 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLogin && (
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-              <input 
-                type="text" 
-                placeholder="First Name" 
-                required
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="w-full bg-black/50 border border-gray-800 text-white px-12 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
-              />
-            </div>
-          )}
+          <AnimatePresence mode="popLayout">
+            {!isLogin && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }} 
+                animate={{ opacity: 1, height: 'auto' }} 
+                exit={{ opacity: 0, height: 0 }}
+                className="relative"
+              >
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                <input 
+                  type="text" 
+                  placeholder="First Name" 
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full bg-black/50 border border-gray-800 text-white px-12 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="relative">
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
@@ -106,33 +153,49 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps) {
           <div className="relative">
             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
             <input 
-              type="password" 
+              type={showPassword ? "text" : "password"} 
               placeholder="Password" 
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-black/50 border border-gray-800 text-white px-12 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
+              className="w-full bg-black/50 border border-gray-800 text-white pl-12 pr-14 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
             />
+            {/* Show/Hide Password Toggle */}
+            <button 
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
+
+          {/* Live Password Checklist (Only shows during Registration) */}
+          <AnimatePresence>
+            {!isLogin && password.length > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }} 
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="p-4 bg-black/40 border border-gray-800 rounded-xl space-y-2 mt-2"
+              >
+                <Requirement met={passwordReqs.length} text="At least 8 characters" />
+                <Requirement met={passwordReqs.upper} text="Contains an uppercase letter" />
+                <Requirement met={passwordReqs.number} text="Contains a number" />
+                <Requirement met={passwordReqs.special} text="Contains a special character (!@#$)" />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <button 
             type="submit" 
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 bg-green-500 text-black font-black uppercase tracking-widest py-4 rounded-xl hover:bg-green-400 active:scale-95 transition-all disabled:opacity-50"
+            disabled={isLoading || (!isLogin && !isPasswordValid)}
+            className="w-full flex items-center justify-center gap-2 bg-green-500 text-black font-black uppercase tracking-widest py-4 rounded-xl hover:bg-green-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-4"
           >
-            {isLoading ? 'Authenticating...' : (isLogin ? 'Login' : 'Register')}
+            {isLoading ? 'Authenticating...' : (isLogin ? 'Login to Dashboard' : 'Create Account')}
             {!isLoading && <ArrowRight size={18} />}
           </button>
         </form>
-
-        <div className="mt-6 text-center">
-          <button 
-            onClick={() => { setIsLogin(!isLogin); setError(''); }}
-            className="text-gray-500 hover:text-white text-sm font-bold transition-colors"
-          >
-            {isLogin ? "Need access? Request an account." : "Already have clearance? Login."}
-          </button>
-        </div>
       </motion.div>
     </div>
   );
