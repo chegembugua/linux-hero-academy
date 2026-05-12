@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+model User {
+  id               String        @id @default(uuid())
+  email            String        @unique
+  firstName        String        @map("first_name")
+  password         String
+  xp               Int           @default(0)
+  level            Int           @default(1)
+  streak           Int           @default(1)
+  dailyMinutes     Int           @default(0) @map("daily_minutes")
+  completedModules String        @default("[]") @map("completed_modules")
+
+  // Relationships to other tables
+  commandLogs      CommandLog[]
+  labProgress      LabProgress[]
+
+  @@map("users")
+}
+
+model CommandLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  command   String
+  isCorrect Boolean  @map("is_correct")
+  timestamp DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("command_logs")
+}
+
+model LabProgress {
+  id      String @id @default(uuid())
+  userId  String @map("user_id")
+  labId   String @map("lab_id")
+  status  String @default("IN_PROGRESS")
+  score   Int    @default(0)
+
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, labId])
+  @@map("lab_progress")
+}

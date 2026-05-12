@@ -3,58 +3,23 @@ import path from "path";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import Database from "better-sqlite3";
+import { PrismaClient } from "@prisma/client"; // Swapped for Prisma
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
+const prisma = new PrismaClient(); // Initialize Prisma Client
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === "production";
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
-
-// Database Setup - EXPANDED FOR ENTERPRISE ARCHITECTURE
-const db = new Database("linux_hero.db");
-db.exec(`
- CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE,
-    first_name TEXT,
-    password TEXT,
-    xp INTEGER DEFAULT 0,
-    level INTEGER DEFAULT 1,
-    streak INTEGER DEFAULT 1,
-    daily_minutes INTEGER DEFAULT 0,
-    completed_modules TEXT DEFAULT '[]'
-  );
-
-  -- NEW: Track every command for the AI to analyze later
-  CREATE TABLE IF NOT EXISTS command_logs (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    command TEXT,
-    is_correct BOOLEAN,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  -- NEW: Track specific enterprise labs
-  CREATE TABLE IF NOT EXISTS lab_progress (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    lab_id TEXT,
-    status TEXT DEFAULT 'IN_PROGRESS',
-    score INTEGER DEFAULT 0,
-    UNIQUE(user_id, lab_id)
-  );
-`);
 
 app.use(cors());
 app.use(express.json());
 
 // --- Authentication Middleware ---
-// This protects your new routes so only logged-in users can access them
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Format: "Bearer <token>"
+  const token = authHeader && authHeader.split(' ')[1]; 
   
   if (token == null) return res.sendStatus(401);
 
@@ -65,55 +30,73 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// Heartbeat endpoint to track practice time
-app.post("/api/user/heartbeat", (req: any, res: any) => {
+// --- Heartbeat endpoint (Refactored for Prisma) ---
+app.post("/api/user/heartbeat", async (req: any, res: any) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).send();
 
   try {
-    const stmt = db.prepare("UPDATE users SET daily_minutes = daily_minutes + 1 WHERE id = ?");
-    stmt.run(userId);
-    
-    const user = db.prepare("SELECT daily_minutes FROM users WHERE id = ?").get(userId) as any;
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { dailyMinutes: { increment: 1 } },
+      select: { dailyMinutes: true }
+    });
     res.json({ dailyMinutes: user.daily_minutes });
   } catch (err) {
     res.status(500).send();
   }
 });
 
-// --- Auth Routes (UPDATED FOR EMAIL & FIRST NAME) ---
-app.post("/api/auth/register", (req: any, res: any) => {
+// --- Auth Routes ---
+app.post("/api/auth/register", async (req: any, res: any) => {
   try {
     const { email, firstName, password } = req.body; 
     const hashedPassword = bcrypt.hashSync(password, 10);
-    const id = Math.random().toString(36).substr(2, 9);
     
-    db.prepare("INSERT INTO users (id, email, first_name, password) VALUES (?, ?, ?, ?)").run(id, email, firstName, hashedPassword);
+    // Prisma handles the ID generation automatically via UUID
+    const user = await prisma.user.create({
+      data: {
+        email,
+        firstName,
+        password: hashedPassword,
+      }
+    });
     
-    const token = jwt.sign({ id, email, firstName }, JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user: { id, email, firstName, xp: 0, level: 1, dailyMinutes: 0 } });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, firstName: user.firstName }, 
+      JWT_SECRET, 
+      { expiresIn: "7d" }
+    );
+
+    res.json({ 
+      token, 
+      user: { 
+        ...user, 
+        completedModules: JSON.parse(user.completedModules) 
+      } 
+    });
   } catch (err) {
     res.status(400).json({ error: "Email already registered" });
   }
 });
 
-app.post("/api/auth/login", (req: any, res: any) => {
+app.post("/api/auth/login", async (req: any, res: any) => {
   const { email, password } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
+  
+  const user = await prisma.user.findUnique({ where: { email } });
   
   if (user && bcrypt.compareSync(password, user.password)) {
-    const token = jwt.sign({ id: user.id, email: user.email, firstName: user.first_name }, JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, firstName: user.firstName }, 
+      JWT_SECRET, 
+      { expiresIn: "7d" }
+    );
+    
     res.json({ 
         token, 
         user: { 
-            id: user.id,
-            email: user.email,
-            firstName: user.first_name,
-            xp: user.xp,
-            level: user.level,
-            streak: user.streak,
-            completedModules: JSON.parse(user.completed_modules),
-            dailyMinutes: user.daily_minutes 
+            ...user, 
+            completedModules: JSON.parse(user.completedModules)
         } 
     });
   } else {
@@ -121,47 +104,47 @@ app.post("/api/auth/login", (req: any, res: any) => {
   }
 });
 
-// --- Progress Routes (NEW) ---
+// --- Progress Routes ---
 
-// Route to fetch progress on page load
-app.get("/api/user/progress", authenticateToken, (req: any, res: any) => {
+app.get("/api/user/progress", authenticateToken, async (req: any, res: any) => {
     try {
-        const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id) as any;
+        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
         if (!user) return res.status(404).json({ error: "User not found" });
 
         res.json({
-            userId: user.id,
-            email: user.email,
-            firstName: user.first_name,
-            xp: user.xp,
-            level: user.level,
-            streak: user.streak,
-            dailyMinutes: user.daily_minutes,
-            completedModules: JSON.parse(user.completed_modules)
+            ...user,
+            completedModules: JSON.parse(user.completedModules)
         });
     } catch (err) {
         res.status(500).json({ error: "Database error" });
     }
 });
 
-// Route to save module completion permanently
-app.post("/api/user/complete-module", authenticateToken, (req: any, res: any) => {
+app.post("/api/user/complete-module", authenticateToken, async (req: any, res: any) => {
     const { moduleId, xpBonus } = req.body;
     try {
-        const user = db.prepare("SELECT completed_modules, xp FROM users WHERE id = ?").get(req.user.id) as any;
-        let completed = JSON.parse(user.completed_modules);
+        const user = await prisma.user.findUnique({ 
+          where: { id: req.user.id },
+          select: { completedModules: true, xp: true }
+        });
+
+        if (!user) return res.sendStatus(404);
+
+        let completed = JSON.parse(user.completedModules);
         
         if (!completed.includes(moduleId)) {
             completed.push(moduleId);
             const newXp = user.xp + xpBonus;
             const newLevel = Math.floor(newXp / 500) + 1;
 
-            const stmt = db.prepare(`
-                UPDATE users 
-                SET completed_modules = ?, xp = ?, level = ? 
-                WHERE id = ?
-            `);
-            stmt.run(JSON.stringify(completed), newXp, newLevel, req.user.id);
+            await prisma.user.update({
+                where: { id: req.user.id },
+                data: {
+                    completedModules: JSON.stringify(completed),
+                    xp: newXp,
+                    level: newLevel
+                }
+            });
         }
         res.json({ success: true });
     } catch (err) {
@@ -176,7 +159,7 @@ app.post("/api/mentor", async (req: any, res: any) => {
   if (!apiKey) return res.json({ type: 'encouragement', message: "Keep learning!" });
 
   try {
-    const genAI = new GoogleGenAI({ apiKey }) as any; 
+    const genAI = new GoogleGenAI(apiKey); 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `
@@ -217,7 +200,7 @@ async function setupServer() {
     app.use(express.static(distPath));
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
-  app.listen(Number(PORT), "0.0.0.0", () => console.log(`🚀 Live on port ${PORT}`));
+  app.listen(Number(PORT), "0.0.0.0", () => console.log(`🚀 Live on Cloud DB at port ${PORT}`));
 }
 
 setupServer();
