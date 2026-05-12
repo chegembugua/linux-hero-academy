@@ -4,14 +4,15 @@ import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg"; // Required for Prisma 7
-import pg from "pg";                          // Required for Prisma 7
+import { PrismaPg } from "@prisma/adapter-pg"; 
+import pg from "pg";                          
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai"; 
 
 const app = express();
 
-// --- Prisma 7 Connection Setup ---
+// --- Prisma 7 & PostgreSQL Adapter Setup ---
+// This bridge allows Prisma to talk to Render's PostgreSQL database
 const connectionString = process.env.DATABASE_URL;
 const pool = new pg.Pool({ connectionString });
 const adapter = new PrismaPg(pool);
@@ -38,7 +39,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// --- Heartbeat endpoint (Fixed for Prisma camelCase) ---
+// --- User Heartbeat (Tracks daily minutes) ---
 app.post("/api/user/heartbeat", async (req: any, res: any) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).send();
@@ -49,7 +50,7 @@ app.post("/api/user/heartbeat", async (req: any, res: any) => {
       data: { dailyMinutes: { increment: 1 } },
       select: { dailyMinutes: true }
     });
-    // TypeScript fix: Use dailyMinutes (Prisma property) instead of daily_minutes
+    // Responds with dailyMinutes (matching Prisma's camelCase mapping)
     res.json({ dailyMinutes: user.dailyMinutes });
   } catch (err) {
     res.status(500).send();
@@ -112,8 +113,7 @@ app.post("/api/auth/login", async (req: any, res: any) => {
   }
 });
 
-// --- Progress Routes ---
-
+// --- User Progress Fetching ---
 app.get("/api/user/progress", authenticateToken, async (req: any, res: any) => {
     try {
         const user = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -128,6 +128,7 @@ app.get("/api/user/progress", authenticateToken, async (req: any, res: any) => {
     }
 });
 
+// --- Module Completion Logic ---
 app.post("/api/user/complete-module", authenticateToken, async (req: any, res: any) => {
     const { moduleId, xpBonus } = req.body;
     try {
@@ -160,34 +161,36 @@ app.post("/api/user/complete-module", authenticateToken, async (req: any, res: a
     }
 });
 
-// --- AI Mentor Proxy (Fixed for 2026 SDK Syntax) ---
-
+// --- AI Mentor (2026 Unified SDK Syntax) ---
 app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.json({ type: 'encouragement', message: "Keep learning!" });
 
   try {
-    // Correct 2026 initialization using the options object
-    const genAI = new GoogleGenAI({ apiKey }); 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
+    // Correct 2026 SDK initialization
+    const ai = new GoogleGenAI({ apiKey }); 
+    
     const prompt = `
-      You are a senior Linux engineer mentoring a junior student.
+      You are a senior Linux engineer mentoring a student.
       Context: ${context.moduleTitle}
-      The student just typed the command: "${lastCommand}"
-      The terminal output was: "${output}"
+      Command: "${lastCommand}"
+      Output: "${output}"
 
-      Analyze and respond in strict JSON:
+      Analyze the mistake or success and respond in strict JSON:
       {
         "type": "hint",
-        "message": "Your mentor response here"
+        "message": "your advice here"
       }
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    // Modern unified call pattern for 2026
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash", 
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
+    });
+
+    const text = response.text || ""; 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     res.json(JSON.parse(jsonMatch ? jsonMatch[0] : text));
   } catch (err) {
@@ -196,6 +199,7 @@ app.post("/api/mentor", async (req: any, res: any) => {
   }
 });
 
+// --- Server Environment & Initialization ---
 async function setupServer() {
   if (!isProd) {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
@@ -205,7 +209,7 @@ async function setupServer() {
     app.use(express.static(distPath));
     app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
-  app.listen(Number(PORT), "0.0.0.0", () => console.log(`🚀 Live on Cloud DB at port ${PORT}`));
+  app.listen(Number(PORT), "0.0.0.0", () => console.log(`🚀 System Online: Cloud DB connected at port ${PORT}`));
 }
 
 setupServer();
