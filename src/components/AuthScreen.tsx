@@ -1,202 +1,114 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Terminal as TerminalIcon, Lock, Mail, User, ArrowRight, Eye, EyeOff, Check, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Terminal, ShieldCheck, Mail, Lock, User } from 'lucide-react';
 
-interface AuthScreenProps {
-  onSuccess: () => void;
-}
-
-export default function AuthScreen({ onSuccess }: AuthScreenProps) {
+export const AuthScreen = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
-  const [firstName, setFirstName] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [firstName, setFirstName] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Live Password Validation Checks
-  const passwordReqs = {
-    length: password.length >= 8,
-    upper: /[A-Z]/.test(password),
-    number: /[0-9]/.test(password),
-    special: /[^A-Za-z0-9]/.test(password),
-  };
-  const isPasswordValid = Object.values(passwordReqs).every(Boolean);
+  const { login, register } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    // Prevent registration if password is weak
-    if (!isLogin && !isPasswordValid) {
-      setError('Please ensure your password meets all security requirements.');
-      return;
-    }
-
-    setIsLoading(true);
-
-    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-    const payload = isLogin ? { email, password } : { email, firstName, password };
+    setLoading(true);
 
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Authentication failed');
+      if (isLogin) {
+        await login(email, password);
+      } else {
+        await register(email, firstName, password);
       }
-
-      // Save the secure token to the browser
-      localStorage.setItem('token', data.token);
-      
-      // Tell App.tsx to let the user in
-      onSuccess();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Connection failed. Check your database.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  // Helper component for the checklist
-  const Requirement = ({ met, text }: { met: boolean, text: string }) => (
-    <div className={`flex items-center gap-2 text-xs font-bold ${met ? 'text-green-500' : 'text-gray-500'}`}>
-      {met ? <Check size={14} /> : <X size={14} />}
-      <span>{text}</span>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-[#000] flex items-center justify-center relative overflow-hidden font-sans">
-      {/* Background Decor */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-20">
-         <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-green-500/10 blur-[120px] rounded-full" />
-         <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-blue-500/10 blur-[120px] rounded-full" />
-      </div>
-
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md p-8 bg-[#0d1117]/80 backdrop-blur-xl border border-gray-800 rounded-3xl z-10 shadow-2xl"
-      >
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-green-500/10 border border-green-500/30 flex items-center justify-center mb-4">
-            <TerminalIcon className="text-green-500" size={32} />
+    <div className="min-h-screen bg-[#000] flex items-center justify-center p-6 font-sans">
+      <div className="w-full max-w-md">
+        {/* Logo Area */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-green-500 text-black mb-4 shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+            <Terminal size={32} strokeWidth={3} />
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Linux Hero Academy</h2>
+          <h1 className="text-3xl font-black text-white tracking-tight">LINUX HERO</h1>
+          <p className="text-gray-500 text-sm mt-2 uppercase tracking-widest font-bold">Engineering Path v7.8</p>
         </div>
 
-        {/* Clear Tab System for Login vs Register */}
-        <div className="flex p-1 bg-black/50 border border-gray-800 rounded-xl mb-8">
-          <button 
-            type="button"
-            onClick={() => { setIsLogin(true); setError(''); }}
-            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${isLogin ? 'bg-gray-800 text-white shadow-md' : 'text-gray-500 hover:text-gray-300'}`}
-          >
-            Login
-          </button>
-          <button 
-            type="button"
-            onClick={() => { setIsLogin(false); setError(''); }}
-            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!isLogin ? 'bg-gray-800 text-white shadow-md' : 'text-gray-500 hover:text-gray-300'}`}
-          >
-            Register
-          </button>
-        </div>
+        <div className="bg-[#0d1117] border border-gray-800 rounded-[32px] p-8 shadow-2xl">
+          <h2 className="text-xl font-bold text-white mb-6">
+            {isLogin ? 'Mission Authentication' : 'Create New Identity'}
+          </h2>
 
-        {error && (
-          <div className="mb-6 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-500 text-sm font-bold text-center">
-            {error}
-          </div>
-        )}
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold rounded-xl flex items-center gap-3">
+              <ShieldCheck size={16} /> {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <AnimatePresence mode="popLayout">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }} 
-                animate={{ opacity: 1, height: 'auto' }} 
-                exit={{ opacity: 0, height: 0 }}
-                className="relative"
-              >
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                <input 
-                  type="text" 
-                  placeholder="First Name" 
+              <div className="relative">
+                <User className="absolute left-4 top-4 text-gray-600" size={18} />
+                <input
+                  type="text"
+                  placeholder="First Name"
                   required
+                  className="w-full pl-12 pr-4 py-4 bg-black border border-gray-800 rounded-2xl text-white outline-none focus:border-green-500 transition-all"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full bg-black/50 border border-gray-800 text-white px-12 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
                 />
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
 
-          <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-            <input 
-              type="email" 
-              placeholder="Email Address" 
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-black/50 border border-gray-800 text-white px-12 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
-            />
-          </div>
+            <div className="relative">
+              <Mail className="absolute left-4 top-4 text-gray-600" size={18} />
+              <input
+                type="email"
+                placeholder="Terminal Email"
+                required
+                className="w-full pl-12 pr-4 py-4 bg-black border border-gray-800 rounded-2xl text-white outline-none focus:border-green-500 transition-all"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
 
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-            <input 
-              type={showPassword ? "text" : "password"} 
-              placeholder="Password" 
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-black/50 border border-gray-800 text-white pl-12 pr-14 py-4 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
-            />
-            {/* Show/Hide Password Toggle */}
-            <button 
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+            <div className="relative">
+              <Lock className="absolute left-4 top-4 text-gray-600" size={18} />
+              <input
+                type="password"
+                placeholder="Access Password"
+                required
+                className="w-full pl-12 pr-4 py-4 bg-black border border-gray-800 rounded-2xl text-white outline-none focus:border-green-500 transition-all"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 mt-4 bg-green-500 text-black font-black rounded-2xl hover:bg-green-400 transition-all shadow-[0_10px_30px_rgba(34,197,94,0.2)] active:scale-95 disabled:opacity-50"
             >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              {loading ? 'SYNCING...' : isLogin ? 'INITIALIZE LOGIN' : 'RECRUIT ENGINEER'}
             </button>
-          </div>
+          </form>
 
-          {/* Live Password Checklist (Only shows during Registration) */}
-          <AnimatePresence>
-            {!isLogin && password.length > 0 && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }} 
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="p-4 bg-black/40 border border-gray-800 rounded-xl space-y-2 mt-2"
-              >
-                <Requirement met={passwordReqs.length} text="At least 8 characters" />
-                <Requirement met={passwordReqs.upper} text="Contains an uppercase letter" />
-                <Requirement met={passwordReqs.number} text="Contains a number" />
-                <Requirement met={passwordReqs.special} text="Contains a special character (!@#$)" />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <button 
-            type="submit" 
-            disabled={isLoading || (!isLogin && !isPasswordValid)}
-            className="w-full flex items-center justify-center gap-2 bg-green-500 text-black font-black uppercase tracking-widest py-4 rounded-xl hover:bg-green-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="w-full mt-6 text-gray-500 text-xs font-bold uppercase tracking-widest hover:text-white transition-colors"
           >
-            {isLoading ? 'Authenticating...' : (isLogin ? 'Login to Dashboard' : 'Create Account')}
-            {!isLoading && <ArrowRight size={18} />}
+            {isLogin ? 'Need a new identity? Register' : 'Existing Hero? Secure Login'}
           </button>
-        </form>
-      </motion.div>
+        </div>
+      </div>
     </div>
   );
-}
+};
