@@ -162,7 +162,10 @@ export default function App() {
                          <TerminalIcon size={180} className="absolute bottom-[-40px] right-[-40px] text-green-500/5 group-hover:rotate-12 transition-transform duration-700 pointer-events-none" />
                       </section>
 
-                      <DailyRoutine />
+                     <DailyRoutine 
+  currentMinutes={progress.dailyMinutes || 0} 
+  onStartSession={() => setActiveTab('terminal')} 
+/>
                    </div>
 
                    {/* Right Column: Daily Streak/Challenge */}
