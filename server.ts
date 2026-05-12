@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === "production";
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 
-// Database Setup - Includes daily_minutes for the 1-hour practice
+// Database Setup - EXPANDED FOR ENTERPRISE ARCHITECTURE
 const db = new Database("linux_hero.db");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -25,6 +25,25 @@ db.exec(`
     daily_minutes INTEGER DEFAULT 0,
     completed_modules TEXT DEFAULT '[]'
   );
+
+  -- NEW: Track every command for the AI to analyze later
+  CREATE TABLE IF NOT EXISTS command_logs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    command TEXT,
+    is_correct BOOLEAN,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- NEW: Track specific enterprise labs
+  CREATE TABLE IF NOT EXISTS lab_progress (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    lab_id TEXT,
+    status TEXT DEFAULT 'IN_PROGRESS',
+    score INTEGER DEFAULT 0,
+    UNIQUE(user_id, lab_id)
+  );
 `);
 
 app.use(cors());
@@ -36,7 +55,6 @@ app.post("/api/user/heartbeat", (req: any, res: any) => {
   if (!userId) return res.status(400).send();
 
   try {
-    // Add 1 minute to the user's daily count
     const stmt = db.prepare("UPDATE users SET daily_minutes = daily_minutes + 1 WHERE id = ?");
     stmt.run(userId);
     
@@ -79,18 +97,35 @@ app.post("/api/auth/login", (req: any, res: any) => {
   }
 });
 
-// AI Mentor Proxy - FIXED FOR TS2339 & TS2559
+// AI Mentor Proxy - UPGRADED TO SENIOR ENGINEER LOGIC
 app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.json({ type: 'encouragement', message: "Keep learning!" });
 
   try {
-    // FIX: Initialize with object and cast to 'any' to bypass strict TS checks on Render
     const genAI = new GoogleGenAI({ apiKey }) as any; 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const prompt = `Linux Mentor feedback for: ${context.moduleTitle}. Command: ${lastCommand}. Output: ${output}. Return JSON: { "type": "hint", "message": "..." }`;
+    // NEW: Highly structured prompt for better AI feedback
+    const prompt = `
+      You are a senior Linux engineer mentoring a junior student.
+      Context: ${context.moduleTitle}
+      The student just typed the command: "${lastCommand}"
+      The terminal output was: "${output}"
+
+      Analyze their command carefully.
+      1. If correct: Congratulate them briefly.
+      2. If syntax error: Explain what the flag or command actually does, but do not give the exact answer.
+      3. If completely lost: Give them a subtle hint.
+      
+      You MUST respond in strict JSON format like this:
+      {
+        "type": "hint",
+        "message": "Your mentor response here"
+      }
+    `;
+
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
