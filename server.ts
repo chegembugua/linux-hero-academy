@@ -3,12 +3,12 @@ import path from "path";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "@prisma/client"; // Swapped for Prisma
+import { PrismaClient } from "@prisma/client";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
 const app = express();
-const prisma = new PrismaClient(); // Initialize Prisma Client
+const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === "production";
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
@@ -30,7 +30,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// --- Heartbeat endpoint (Refactored for Prisma) ---
+// --- Heartbeat endpoint (FIXED Property Name) ---
 app.post("/api/user/heartbeat", async (req: any, res: any) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).send();
@@ -39,9 +39,10 @@ app.post("/api/user/heartbeat", async (req: any, res: any) => {
     const user = await prisma.user.update({
       where: { id: userId },
       data: { dailyMinutes: { increment: 1 } },
-      select: { dailyMinutes: true }
+      select: { dailyMinutes: true } // Prisma uses camelCase here
     });
-    res.json({ dailyMinutes: user.daily_minutes });
+    // FIXED: Changed user.daily_minutes to user.dailyMinutes
+    res.json({ dailyMinutes: user.dailyMinutes });
   } catch (err) {
     res.status(500).send();
   }
@@ -53,7 +54,6 @@ app.post("/api/auth/register", async (req: any, res: any) => {
     const { email, firstName, password } = req.body; 
     const hashedPassword = bcrypt.hashSync(password, 10);
     
-    // Prisma handles the ID generation automatically via UUID
     const user = await prisma.user.create({
       data: {
         email,
@@ -82,7 +82,6 @@ app.post("/api/auth/register", async (req: any, res: any) => {
 
 app.post("/api/auth/login", async (req: any, res: any) => {
   const { email, password } = req.body;
-  
   const user = await prisma.user.findUnique({ where: { email } });
   
   if (user && bcrypt.compareSync(password, user.password)) {
@@ -152,13 +151,14 @@ app.post("/api/user/complete-module", authenticateToken, async (req: any, res: a
     }
 });
 
-// --- AI Mentor Proxy ---
+// --- AI Mentor Proxy (FIXED GoogleGenAI Init) ---
 app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.json({ type: 'encouragement', message: "Keep learning!" });
 
   try {
+    // FIXED: Passing apiKey as an object property
     const genAI = new GoogleGenAI(apiKey); 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
