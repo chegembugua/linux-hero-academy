@@ -30,7 +30,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// --- Heartbeat endpoint (FIXED Property Name) ---
+// --- Heartbeat endpoint (FIXED Property Naming) ---
 app.post("/api/user/heartbeat", async (req: any, res: any) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).send();
@@ -39,8 +39,9 @@ app.post("/api/user/heartbeat", async (req: any, res: any) => {
     const user = await prisma.user.update({
       where: { id: userId },
       data: { dailyMinutes: { increment: 1 } },
-      select: { dailyMinutes: true } // Prisma uses camelCase here
+      select: { dailyMinutes: true }
     });
+    
     // FIXED: Changed user.daily_minutes to user.dailyMinutes
     res.json({ dailyMinutes: user.dailyMinutes });
   } catch (err) {
@@ -151,38 +152,36 @@ app.post("/api/user/complete-module", authenticateToken, async (req: any, res: a
     }
 });
 
-// --- AI Mentor Proxy (FIXED GoogleGenAI Init) ---
+// --- AI Mentor Proxy (FIXED for 2026 SDK Syntax) ---
 app.post("/api/mentor", async (req: any, res: any) => {
   const { lastCommand, output, context } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.json({ type: 'encouragement', message: "Keep learning!" });
 
   try {
-    // FIXED: Passing apiKey as an object property
-    const genAI = new GoogleGenAI(apiKey); 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
+    // FIXED: Corrected initialization with named apiKey parameter
+    const ai = new GoogleGenAI({ apiKey }); 
+    
     const prompt = `
       You are a senior Linux engineer mentoring a junior student.
       Context: ${context.moduleTitle}
       The student just typed the command: "${lastCommand}"
       The terminal output was: "${output}"
 
-      Analyze their command carefully.
-      1. If correct: Congratulate them briefly.
-      2. If syntax error: Explain what the flag or command actually does, but do not give the exact answer.
-      3. If completely lost: Give them a subtle hint.
-      
-      You MUST respond in strict JSON format like this:
+      Analyze their command carefully and respond in strict JSON:
       {
         "type": "hint",
         "message": "Your mentor response here"
       }
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    // FIXED: Direct call to ai.models.generateContent (modern 2026 SDK pattern)
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash", // Upgraded to the current 2026 model
+      contents: [{ role: "user", parts: [{ text: prompt }] }]
+    });
+
+    const text = response.text; // Property access
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     res.json(JSON.parse(jsonMatch ? jsonMatch[0] : text));
   } catch (err) {
