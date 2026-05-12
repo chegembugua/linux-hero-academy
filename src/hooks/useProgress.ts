@@ -1,6 +1,6 @@
-// src/hooks/useProgress.ts
 import { useState, useEffect, useCallback } from 'react';
 import { UserProgress } from '../types';
+import { api } from '../api'; 
 
 const INITIAL_PROGRESS: UserProgress = {
   userId: null,
@@ -10,7 +10,7 @@ const INITIAL_PROGRESS: UserProgress = {
   dailyMinutes: 0,
   lastVisit: new Date().toISOString(),
   completedModules: [],
-  unlockedModules: ['m1'],
+  unlockedModules: ['m1'], // m1 is the default starting point
   unlockedAchievements: []
 };
 
@@ -18,56 +18,59 @@ export function useProgress() {
   const [progress, setProgress] = useState<UserProgress>(INITIAL_PROGRESS);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load progress from the server when the hook mounts
-  useEffect(() => {
-    const fetchProgress = async () => {
-      try {
-        // Fetch the JWT token that is saved during login
-        const token = localStorage.getItem('token'); 
-        if (!token) {
-           setIsLoading(false);
-           return;
-        }
-
-        const response = await fetch('/api/user/progress', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setProgress(prev => ({
-            ...prev,
-            ...data,
-            // Calculate unlocked modules dynamically based on what the server says is completed
-            unlockedModules: calculateUnlockedModules(data.completedModules)
-          }));
-        }
-      } catch (error) {
-        console.error("Failed to load progress:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchProgress();
-  }, []);
-
-  // Helper function to figure out what's unlocked based on what's completed
-  const calculateUnlockedModules = (completed: string[]) => {
-    const unlocked = ['m1'];
+  // --- 1. THE CALCULATOR ---
+  // This is the "Brain" that decides what is unlocked.
+  // We wrap it in useCallback so it's a stable reference.
+  const calculateUnlockedModules = useCallback((completed: string[]) => {
+    const unlocked = ['m1']; // m1 is always available
+    
     completed.forEach(moduleId => {
-      const nextIndex = parseInt(moduleId.replace('m', '')) + 1;
-      const nextId = `m${nextIndex}`;
-      if (!unlocked.includes(nextId)) {
-        unlocked.push(nextId);
+      const currentNum = parseInt(moduleId.replace(/[^\d]/g, ''), 10); // Extract number only
+      if (!isNaN(currentNum)) {
+        const nextId = `m${currentNum + 1}`;
+        if (!unlocked.includes(nextId)) {
+          unlocked.push(nextId);
+        }
       }
     });
     return unlocked;
-  };
+  }, []);
 
-  // Heartbeat function (used by App.tsx)
+  // --- 2. FETCH PROGRESS FROM SERVER ---
+  const fetchProgress = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const data = await api.request('/user/progress');
+      
+      // Handle the fact that Prisma sometimes sends a string instead of an array
+      const rawCompleted = data.completedModules;
+      const parsedCompleted = Array.isArray(rawCompleted) 
+        ? rawCompleted 
+        : JSON.parse(rawCompleted || '[]');
+
+      setProgress(prev => ({
+        ...prev,
+        ...data,
+        completedModules: parsedCompleted,
+        unlockedModules: calculateUnlockedModules(parsedCompleted)
+      }));
+    } catch (error) {
+      console.error("🔴 Failed to load progress:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [calculateUnlockedModules]);
+
+  useEffect(() => {
+    fetchProgress();
+  }, [fetchProgress]);
+
+  // --- 3. HEARTBEAT ---
   const updateDailyMinutes = useCallback((minutes: number) => {
     setProgress(prev => ({
       ...prev,
@@ -75,43 +78,39 @@ export function useProgress() {
     }));
   }, []);
 
-  // Sync completed modules to the server
+  // --- 4. COMPLETE MODULE (THE LOCK BREAKER) ---
   const completeModule = async (moduleId: string, xpBonus: number) => {
-    if (progress.completedModules.includes(moduleId) || !progress.userId) return;
-
-    // Optimistic UI update (update frontend immediately so the user doesn't feel a delay)
+    // 1. UPDATE LOCALLY FIRST (Optimistic UI)
+    // This makes the next module unlock IMMEDIATELY without waiting for the server.
     setProgress(prev => {
-      const newCompleted = [...prev.completedModules, moduleId];
+      const newCompleted = [...prev.completedModules];
+      if (!newCompleted.includes(moduleId)) {
+        newCompleted.push(moduleId);
+      }
+      
+      const newUnlocked = calculateUnlockedModules(newCompleted);
+      const newXp = prev.xp + xpBonus;
+
       return {
         ...prev,
         completedModules: newCompleted,
-        unlockedModules: calculateUnlockedModules(newCompleted),
-        xp: prev.xp + xpBonus,
-        level: Math.floor((prev.xp + xpBonus) / 500) + 1
+        unlockedModules: newUnlocked,
+        xp: newXp,
+        level: Math.floor(newXp / 500) + 1
       };
     });
 
-    // Send the actual update to the server securely
+    // 2. SYNC WITH SERVER IN BACKGROUND
     try {
-      await fetch('/api/user/complete-module', {
+      await api.request('/user/complete-module', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
         body: JSON.stringify({ moduleId, xpBonus })
       });
-    } catch (error) {
-      console.error("Failed to sync completed module:", error);
+      // Optional: re-fetch to ensure sync is perfect
+      // await fetchProgress(); 
+    } catch (err) {
+      console.error("🔴 Failed to sync completion to server:", err);
     }
-  };
-
-  const addXp = (amount: number) => {
-      setProgress(prev => {
-        const newXp = prev.xp + amount;
-        const newLevel = Math.floor(newXp / 500) + 1;
-        return { ...prev, xp: newXp, level: newLevel };
-      });
   };
 
   const setUserId = (id: string) => {
@@ -121,9 +120,9 @@ export function useProgress() {
   return { 
     progress, 
     isLoading, 
-    addXp, 
     completeModule, 
     updateDailyMinutes, 
-    setUserId 
+    setUserId,
+    refreshProgress: fetchProgress 
   };
 }
